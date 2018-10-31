@@ -1,0 +1,613 @@
+
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge, chrome=1">
+    <meta name="renderer" content="webkit">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta http-equiv="Cache-Control" content="no-transform"/>
+    <meta http-equiv="Cache-Control" content="no-siteapp"/>
+    <meta name="keywords" content="redis"/>
+    <meta name="description" content="记录程序的故事，记录我的生活。"/>
+    <link rel="shortcut icon" href="http://notobject.com/templates/themes/default/static/img/favicon.png"/>
+    <link rel="apple-touch-icon" href="http://notobject.com/templates/themes/default/static/img/apple-touch-icon.png"/>
+    <title>基于redis-pub/sub的简单服务端主动消息推送 - NotObject - 代码和生活</title>
+    <link href="http://notobject.com/templates/themes/default/static/css/xcode.min.css" rel="stylesheet">
+    <link href="http://notobject.com/templates/themes/default/static/css/style.min.css" rel="stylesheet">
+            <script src="/static/admin/plugins/jquery/3.2.1/jquery.min.js"></script>
+
+
+    <!--[if lt IE 9]>
+    <script src="//cdn.bootcss.com/html5shiv/r29/html5.min.js"></script>
+    <script src="//cdn.bootcss.com/respond.js/1.4.2/respond.min.js"></script>
+    <![endif]-->
+</head>
+<body  gtools_scp_screen_capture_injected="true">
+<!--[if lt IE 8]>
+<div class="browsehappy" role="dialog">
+    当前网页 <strong>不支持</strong> 你正在使用的浏览器. 为了正常的访问, 请 <a href="http://browsehappy.com/" target="_blank">升级你的浏览器</a>。
+</div>
+<![endif]-->
+<header id="header" class="header bg-white">
+    <div class="navbar-container">
+        <a href="http://notobject.com" class="navbar-logo">
+            <img src="http://notobject.com/templates/themes/default/static/img/logo.png" alt="NotObject - 代码和生活"/>
+        </a>
+        <div class="navbar-menu">
+            <a href="https://github.com/notobject" target="_blank">GitHub</a>
+            <a href="http://notobject.com/archives">归档</a>
+            <a href="http://notobject.com/about">关于</a>
+        </div>
+        <div class="navbar-search" onclick="">
+            <span class="icon-search"></span>
+            <form role="search" onsubmit="return false;">
+                <span class="search-box">
+                    <input type="text" id="search-inp" class="input" placeholder="搜索..." maxlength="30"
+                           autocomplete="off">
+                </span>
+            </form>
+        </div>
+        <div class="navbar-mobile-menu" onclick="">
+            <span class="icon-menu cross"><span class="middle"></span></span>
+            <ul>
+                <li><a href="https://github.com/notobject" target="_blank">GitHub</a></li>
+                <li><a href="http://notobject.com/archives">归档</a></li>
+                <li><a href="http://notobject.com/about">关于</a></li>
+            </ul>
+        </div>
+    </div>
+</header>
+<article class="main-content page-page" itemscope itemtype="http://schema.org/Article">
+    <div class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+            <a href="http://notobject.com/article/19">基于redis-pub/sub的简单服务端主动消息推送</a>
+        </h1>
+        <div class="post-data">
+            <time datetime="2018-04-08" itemprop="datePublished">发布于 2018-04-08</time>
+            / <a href="/category/%E6%95%B0%E6%8D%AE%E5%BA%93">数据库</a><a href="/category/Java">Java</a> / <a href="#comments">没有评论</a> /
+            12浏览
+        </div>
+    </div>
+    <div id="post-content" class="post-content" itemprop="articleBody">
+        <p class="post-tags"><a href="/tag/redis">redis</a></p>
+        <h2>前言</h2>
+<p>去年暑假的时候，我们的竞赛项目需要用到消息推送的功能，并且对于推动的可达性要求不高（如果客户端不在线，则接收不到也没关系），一开始的想法是去找一个开源的消息推送SDK。但是考虑到开源的封装一般都比较大，而且还要花费时间去解决程序和接口的兼容性问题。正好我们当时采用了redis作为缓存数据库，所以就想到用Redis的publish/subscribe功能去简单的实现这个功能。</p>
+<h2>服务器端主动推送</h2>
+<pre><code class="language-java">import redis.clients.jedis.Jedis;
+import redis.clients.jedis.JedisPool;
+import redis.clients.jedis.JedisPoolConfig;
+
+/**
+ * author: NotObject
+ * date  : 2017-08-22 17:32
+ * email : 610215675@qq.com
+ * --------------------------------------------------
+ * function: 推送服务端
+ */
+public class PushServer {
+
+    private String host = null;
+    private int port = 6379;
+    private String pass = null;
+    private String channel = null;
+
+    private JedisPool jedisPool = null;
+
+    public PushServer(String host, int port, String pass, String channel) {
+        this.host = host;
+        this.port = port;
+        this.pass = pass;
+        this.channel = channel;
+    }
+    public PushServer(String host, int port, String channel) {
+        this(host, port, null, channel);
+    }
+    public PushServer(String host, String channel) {
+        this(host, 6379, null, channel);
+    }
+
+    public void sendMessage(String message) {
+        if (jedisPool == null) {
+            if (pass == null) {
+                jedisPool = new JedisPool(host, port);
+            } else {
+                jedisPool = new JedisPool(new JedisPoolConfig(), host, port, 3000, pass);
+            }
+        }
+        Jedis jedis = jedisPool.getResource();
+        jedis.publish(channel, message);
+        jedisPool.returnResource(jedis);
+    }
+
+    public String getHost() {
+        return host;
+    }
+
+    public void setHost(String host) {
+        this.host = host;
+    }
+
+    public int getPort() {
+        return port;
+    }
+
+    public void setPort(int port) {
+        this.port = port;
+    }
+
+    public String getPass() {
+        return pass;
+    }
+
+    public void setPass(String pass) {
+        this.pass = pass;
+    }
+
+    public String getChannel() {
+        return channel;
+    }
+
+    public void setChannel(String channel) {
+        this.channel = channel;
+    }
+}
+
+</code></pre>
+<h2>客户端被动接收</h2>
+<pre><code class="language-java">import redis.clients.jedis.Jedis;
+import redis.clients.jedis.JedisPubSub;
+
+/**
+ * author: NotObject
+ * date  : 2017-07-27 11:36
+ * email : 610215675@qq.com
+ * --------------------------------------------------
+ * function: 推送客户端
+ */
+public class PushClient {
+
+    // Redis服务器地址
+    private String host = null;
+    // Redis服务端口
+    private int port = 6379;
+    // Redis连接密码，如果没有则设为null
+    private String pass = null;
+    // 监听的频道 默认为“push”
+    private String channel = null;
+
+    // 消息到达后处理接口，由使用者自己实现
+    private OnPushMessageListener onPushMessageListener;
+
+    // 监听线程
+    private Thread pushLisenter = null;
+
+    public PushClient(OnPushMessageListener onPushMessageListener) {
+        this.onPushMessageListener = onPushMessageListener;
+    }
+
+
+    public PushClient setAddress(String host, int port) {
+        this.host = host;
+        this.port = port;
+        return this;
+    }
+
+    public PushClient setAddress(String host) {
+        this.host = host;
+        return this;
+    }
+
+    public PushClient setPass(String pass) {
+        this.pass = pass;
+        return this;
+    }
+
+    public PushClient setChannel(String channel) {
+        this.channel = channel;
+        return this;
+    }
+
+    /**
+     * 开始监听
+     *
+     * @return
+     */
+    public PushClient listen() {
+        if (host == null) {
+            throw new RuntimeException(&quot;你必须指定host!&quot;);
+        }
+        if (onPushMessageListener == null) {
+            throw new RuntimeException(&quot;你必须实现处理接口onPushMessageListener，不然意义在哪里？&quot;);
+        }
+        if (channel == null){
+            throw new RuntimeException(&quot;你必须指定订阅的频道channel!&quot;);
+        }
+        if (pushLisenter != null) {
+            return this;
+        }
+        pushLisenter = new Thread(new Runnable() {
+            @Override
+            public void run() {
+                Jedis jedis = new Jedis(host, port);
+                if (pass != null &amp;&amp; !&quot;&quot;.equals(pass)) {
+                    jedis.auth(pass);
+                }
+                log.info(&quot;PushClient:to start listen '&quot; + channel + &quot;' | &quot; + host + &quot;:&quot; + port);
+                jedis.subscribe(new JedisPubSub() {
+                    @Override
+                    public void onMessage(String channel, String message) {
+                        onPushMessageListener.onMesssage(message);
+                    }
+                }, channel);
+                jedis.close();
+            }
+        });
+        pushLisenter.start();
+        return this;
+    }
+
+    /**
+     * 停止监听
+     */
+    public void stop() {
+        try {
+            pushLisenter.stop();
+            pushLisenter = null;
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+
+    /**
+     * 推送消息处理接口
+     */
+    public interface OnPushMessageListener {
+        /**
+         * 消息到达
+         *
+         * @param message 消息
+         */
+        void onMesssage(String message);
+    }
+}
+
+</code></pre>
+<h2>Demo</h2>
+<pre><code class="language-java">/**
+ * author: NotObject
+ * date  : 2017-08-22 19:19
+ * email : 610215675@qq.com
+ * --------------------------------------------------
+ * function: 该代码基于jedis，运行前需要导入最新的jedis包
+ */
+public class Demo {
+
+    // 使用示例
+    public static void main(String[] args) {
+
+        // 客户端监听消息
+        PushClient client = new PushClient(new PushClient.OnPushMessageListener() {
+            @Override
+            public void onMesssage(String message) {
+                System.out.println(message);
+            }
+        });
+        client.setAddress(&quot;127.0.0.1&quot;);
+        client.setChannel(&quot;push&quot;);
+        client.listen();
+
+        // 服务端发送消息
+        PushServer pushServer = new PushServer(&quot;127.0.0.1&quot;, &quot;push&quot;);
+        pushServer.sendMessage(&quot;A&quot;);
+        pushServer.sendMessage(&quot;B&quot;);
+        pushServer.sendMessage(&quot;C&quot;);
+    }
+}
+
+</code></pre>
+<h2>存在的问题</h2>
+<p>其实更好的做法是利用Redis的列表和散列表数据结构的特性实现一个消息队列。但是对于我们的项目来说，不存在并发问题，不存在可达性要求的问题，所以Redis的pub/sub功能完全可以满足要求，因此我就只对pub/sub做了一个简单的封装。相比臃肿的SDK/Jar包，只额外引入了两个类，100多行的代码，并且整个推送/接收的调用接口都完全按照原本项目的要求封装，对原来的代码没有侵害。</p>
+
+        <p class="post-info">
+            本文由 <a href="http://www.notobject.com">NotObject</a> 创作，采用 <a href="https://creativecommons.org/licenses/by/4.0/" target="_blank"
+                                               rel="external nofollow">知识共享署名4.0</a> 国际许可协议进行许可<br>本站文章除注明转载/出处外，均为本站原创或翻译，转载前请务必署名<br>最后编辑时间为:
+            2018/04/08 21:05
+        </p>
+    </div>
+</article>
+<div id="post-bottom-bar" class="post-bottom-bar">
+    <div class="bottom-bar-inner">
+        <div class="bottom-bar-items social-share left">
+            <span class="bottom-bar-item">Share : </span>
+            <span class="bottom-bar-item bottom-bar-facebook"><a href="https://www.facebook.com/sharer/sharer.php?u=http://notobject.com/article/19" target="_blank" title="基于redis-pub/sub的简单服务端主动消息推送" rel="nofollow">facebook</a></span>
+            <span class="bottom-bar-item bottom-bar-twitter"><a href="https://twitter.com/intent/tweet?url=http://notobject.com/article/19&text=基于redis-pub/sub的简单服务端主动消息推送" target="_blank" title="基于redis-pub/sub的简单服务端主动消息推送" rel="nofollow">Twitter</a></span>
+            <span class="bottom-bar-item bottom-bar-weibo"><a href="http://service.weibo.com/share/share.php?url=http://notobject.com/article/19&amp;title=基于redis-pub/sub的简单服务端主动消息推送" target="_blank" title="基于redis-pub/sub的简单服务端主动消息推送" rel="nofollow">Weibo</a></span>
+            <span class="bottom-bar-item bottom-bar-qrcode"><a href="//pan.baidu.com/share/qrcode?w=300&amp;h=300&amp;url=http://notobject.com/article/19" target="_blank" rel="nofollow">QRcode</a></span>
+        </div>
+        <div class="bottom-bar-items right">
+            <span class="bottom-bar-item"><a href="http://notobject.com/article/17" title="ML启程笔记2：基于miniconda搭建python开发环境">→</a></span>
+            <span class="bottom-bar-item"></span>
+            <span class="bottom-bar-item"><a href="#footer">↓</a></span>
+            <span class="bottom-bar-item"><a href="#">↑</a></span>
+        </div>
+    </div>
+</div>
+<div id="19" class="comment-container">
+    <div id="comments" class="clearfix">
+        <span class="response"></span>
+
+        <form method="post" id="comment-form" class="comment-form" onsubmit="return TaleComment.subComment();">
+            <input type="hidden" name="coid" id="coid"/>
+            <input type="hidden" name="cid" id="cid" value="19"/>
+            <input type="hidden" name="csrf_token" value="BGYSBmw-G6ig6J1vMhVSN1"/>
+            <input name="author" maxlength="12" id="author" class="form-control input-control clearfix"
+                   placeholder="姓名 (*)" value="" required/>
+            <input type="email" name="mail" id="mail" class="form-control input-control clearfix" placeholder="邮箱 (*)"
+                   value="" required/>
+            <input type="url" name="url" id="url" class="form-control input-control clearfix" placeholder="网址 (http://)"
+                   value=""/>
+            <textarea name="content" id="textarea" class="form-control" placeholder="基佬，留下你的评论." required minlength="5" maxlength="2000"></textarea>
+            <button class="submit" id="misubmit">提交</button>
+        </form>
+
+
+
+
+    </div>
+</div>
+<script type="text/javascript">
+    (function () {
+        window.TaleComment = {
+            reply: function (coid) {
+                $('#comment-form input[name=coid]').val(coid);
+                $("html,body").animate({scrollTop: $('div.comment-container').offset().top}, 500);
+                $('#comment-form #textarea').focus();
+            },
+            subComment: function () {
+                $.ajax({
+                    type: 'post',
+                    url: '/comment',
+                    data: $('#comment-form').serialize(),
+                    async: false,
+                    dataType: 'json',
+                    success: function (result) {
+                        $('#comment-form input[name=coid]').val('');
+                        if (result && result.success) {
+                            window.location.reload();
+                        } else {
+                            if (result.msg) {
+                                alert(result.msg);
+                                window.location.reload();
+                            }
+                        }
+                    }
+                });
+                return false;
+            }
+        };
+    })();
+
+    function getCommentCookie(name) {
+        var arr, reg = new RegExp("(^| )" + name + "=([^;]*)(;|$)");
+        if (arr = document.cookie.match(reg))
+            return unescape(decodeURI(arr[2]));
+        else
+            return null;
+    }
+
+    function addCommentInputValue() {
+        document.getElementById('author').value = getCommentCookie('tale_remember_author');
+        document.getElementById('mail').value = getCommentCookie('tale_remember_mail');
+        document.getElementById('url').value = getCommentCookie('tale_remember_url');
+    }
+
+    addCommentInputValue();
+</script>
+<footer id="footer" class="footer bg-white">
+    <div class="footer-social">
+        <div class="footer-container clearfix">
+            <div class="social-list">
+
+
+    <a class="social rss" target="blank" href="/feed">RSS</a>
+
+
+</div>
+        </div>
+    </div>
+    <div class="footer-meta">
+        <div class="footer-container">
+            <div class="meta-item meta-copyright">
+                <div class="meta-copyright-info">
+                    <a href="http://notobject.com" class="info-logo">
+                        <img src="/templates/themes/default/static/img/logo.png" alt="NotObject - 代码和生活">
+                    </a>
+                    <div class="info-text">
+                        <p>热爱技术，崇尚懒惰.</p>
+                        <p>Powered by <a href="https://github.com/otale/tale" target="_blank" rel="nofollow">Tale</a>
+                        </p>
+                        <p>湘ICP备16019156号-1  &copy 2017-2018 <a hre="http://www.notobject.com">NOTOBJECT.COM </a></p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="meta-item meta-posts">
+                <h3 class="meta-title">最新文章</h3>
+                <li>
+                    <a href="http://notobject.com/article/19">基于redis-pub/sub的简单服务端主动消息推送</a>
+                </li>
+                <li>
+                    <a href="http://notobject.com/article/17">ML启程笔记2：基于miniconda搭建python开发环境</a>
+                </li>
+                <li>
+                    <a href="http://notobject.com/article/4">ML启程笔记1:开启我的机器学习生涯</a>
+                </li>
+                <li>
+                    <a href="http://notobject.com/article/5">ML启程笔记0：笔记大纲</a>
+                </li>
+                <li>
+                    <a href="http://notobject.com/article/15">写一个shell脚本备份自己的博客吧</a>
+                </li>
+                <li>
+                    <a href="http://notobject.com/article/12">安利一个颜值超高的国产Linux发行版 —— “Deepin”</a>
+                </li>
+                <li>
+                    <a href="http://notobject.com/article/11">Deepin/ubuntu 下安装cuda9.0和cudnn7.0</a>
+                </li>
+                <li>
+                    <a href="http://notobject.com/article/13">Deepin/Ubuntu下安装Redis</a>
+                </li>
+            </div>
+
+            <div class="meta-item meta-comments">
+                <h3 class="meta-title">最新评论</h3>
+                <li>
+                    <a href="http://notobject.com/article/12#comment-1">htcs：个人很喜欢这款系统</a>
+                </li>
+            </div>
+        </div>
+    </div>
+</footer>
+
+<div id="directory-content" class="directory-content">
+    <div id="directory"></div>
+</div>
+<script>
+    $('#directory').html('');
+    var postDirectoryBuild = function() {
+        var postChildren = function children(childNodes, reg) {
+                var result = [],
+                    isReg = typeof reg === 'object',
+                    isStr = typeof reg === 'string',
+                    node, i, len;
+                for (i = 0, len = childNodes.length; i < len; i++) {
+                    node = childNodes[i];
+                    if ((node.nodeType === 1 || node.nodeType === 9) &&
+                        (!reg ||
+                        isReg && reg.test(node.tagName.toLowerCase()) ||
+                        isStr && node.tagName.toLowerCase() === reg)) {
+                        result.push(node);
+                    }
+                }
+                return result;
+            },
+            createPostDirectory = function(article, directory, isDirNum) {
+                var contentArr = [],
+                    titleId = [],
+                    levelArr, root, level,
+                    currentList, list, li, link, i, len;
+                levelArr = (function(article, contentArr, titleId) {
+                    var titleElem = postChildren(article.childNodes, /^h\d$/),
+                        levelArr = [],
+                        lastNum = 1,
+                        lastRevNum = 1,
+                        count = 0,
+                        guid = 1,
+                        id = 'directory' + (Math.random() + '').replace(/\D/, ''),
+                        lastRevNum, num, elem;
+                    while (titleElem.length) {
+                        elem = titleElem.shift();
+                        contentArr.push(elem.innerHTML);
+                        num = +elem.tagName.match(/\d/)[0];
+                        if (num > lastNum) {
+                            levelArr.push(1);
+                            lastRevNum += 1;
+                        } else if (num === lastRevNum ||
+                            num > lastRevNum && num <= lastNum) {
+                            levelArr.push(0);
+                            lastRevNum = lastRevNum;
+                        } else if (num < lastRevNum) {
+                            levelArr.push(num - lastRevNum);
+                            lastRevNum = num;
+                        }
+                        count += levelArr[levelArr.length - 1];
+                        lastNum = num;
+                        elem.id = elem.id || (id + guid++);
+                        titleId.push(elem.id);
+                    }
+                    if (count !== 0 && levelArr[0] === 1) levelArr[0] = 0;
+
+                    return levelArr;
+                })(article, contentArr, titleId);
+                currentList = root = document.createElement('ul');
+                dirNum = [0];
+                for (i = 0, len = levelArr.length; i < len; i++) {
+                    level = levelArr[i];
+                    if (level === 1) {
+                        list = document.createElement('ul');
+                        if (!currentList.lastElementChild) {
+                            currentList.appendChild(document.createElement('li'));
+                        }
+                        currentList.lastElementChild.appendChild(list);
+                        currentList = list;
+                        dirNum.push(0);
+                    } else if (level < 0) {
+                        level *= 2;
+                        while (level++) {
+                            if (level % 2) dirNum.pop();
+                            currentList = currentList.parentNode;
+                        }
+                    }
+                    dirNum[dirNum.length - 1]++;
+                    li = document.createElement('li');
+                    link = document.createElement('a');
+                    link.href = '#' + titleId[i];
+                    link.innerHTML = !isDirNum ? contentArr[i] :
+                        dirNum.join('.') + ' ' + contentArr[i] ;
+                    li.appendChild(link);
+                    currentList.appendChild(li);
+                }
+                directory.appendChild(root);
+            };
+        createPostDirectory(document.getElementById('post-content'),document.getElementById('directory'), true);
+    };
+    postDirectoryBuild();
+</script>
+<script src="http://notobject.com/templates/themes/default/static/js/headroom.min.js"></script>
+<script src="//cdn.bootcss.com/highlight.js/9.12.0/highlight.min.js"></script>
+<script src="http://notobject.com/templates/themes/default/static/js/instantclick.min.js"></script>
+<script type="text/javascript">
+        var postDirectory = new Headroom(document.getElementById("directory-content"), {
+            tolerance: 0,
+            offset : 100,
+            classes: {
+                initial: "initial",
+                pinned: "pinned",
+                unpinned: "unpinned"
+            }
+        });
+    var header = new Headroom(document.getElementById("header"), {
+        tolerance: 10,
+        offset : 80,
+        classes: {
+            initial: "animated",
+            pinned: "slideDown",
+            unpinned: "slideUp"
+        }
+    });
+    header.init();
+    $('#search-inp').keypress(function (e) {
+        var key = e.which; //e.which是按键的值
+        if (key == 13) {
+            var q = $(this).val();
+            if (q && q != '') {
+                window.location.href = '/search/' + q;
+            }
+        }
+    });
+</script>
+<script data-no-instant>
+    InstantClick.on('change', function (isInitialLoad) {
+        var blocks = document.querySelectorAll('pre code');
+        for (var i = 0; i < blocks.length; i++) {
+            hljs.highlightBlock(blocks[i]);
+        }
+        if (isInitialLoad === false) {
+            if (typeof ga !== 'undefined') ga('send', 'pageview', location.pathname + location.search);
+        }
+    });
+    InstantClick.init('mousedown');
+</script>
+</body>
+</html>
